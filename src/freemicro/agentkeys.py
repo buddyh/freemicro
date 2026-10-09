@@ -78,6 +78,7 @@ from typing import (
 )
 
 from freemicro.state.engine import (
+    CLAUDE_DESKTOP,
     DEFAULT_DECAY,
     AgentState,
     DecayPolicy,
@@ -347,10 +348,32 @@ def parse_agent_keys(raw: Any) -> AgentKeysConfig:
 # Projects
 # ---------------------------------------------------------------------------
 
+#: Joins a directory to a Claude desktop session id in a project key.
+DESKTOP_SEPARATOR = "#"
+
+
+def project_key(session: SessionState) -> str:
+    """The key a session's Agent Key is grouped under.
+
+    A terminal session groups by its directory. A Claude desktop app session
+    groups by directory *and* its app session id: the app keeps many sessions
+    in one folder, each with a stable id of its own, so one key per folder
+    would hide all but one of them.
+    """
+    path = normalise_project(session.cwd)
+    if path and session.term_program == CLAUDE_DESKTOP and session.term_session:
+        return f"{path}{DESKTOP_SEPARATOR}{session.term_session}"
+    return path
+
+
 def project_label(path: str) -> str:
     """The short name to show for a project directory."""
     if not path:
         return ""
+    if DESKTOP_SEPARATOR in path:
+        folder, _, session = path.rpartition(DESKTOP_SEPARATOR)
+        short = session.removeprefix("local_")[:6]
+        return f"{os.path.basename(folder.rstrip(os.sep)) or folder} {short}"
     base = os.path.basename(path.rstrip(os.sep)) or path
     return base
 
@@ -424,7 +447,7 @@ def group_projects(
     """
     grouped: Dict[str, List[Tuple[AgentState, SessionState]]] = {}
     for session in sessions:
-        path = normalise_project(session.cwd)
+        path = project_key(session)
         if not path:
             continue
         state = effective_state(session, now=now, decay=decay)
@@ -480,6 +503,8 @@ def _disambiguate(projects: Sequence[Project]) -> List[Project]:
 
 def _tail(path: str, depth: int) -> str:
     """The last ``depth`` components of a path, for display only."""
+    if DESKTOP_SEPARATOR in path:
+        return project_label(path)
     parts = [part for part in path.split(os.sep) if part]
     if not parts:
         return path

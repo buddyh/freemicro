@@ -1322,3 +1322,33 @@ def test_records_written_before_this_feature_still_load(tmp_path):
     )
     store.clock = lambda: NOW
     assert store.sessions()[0].terminal.empty
+
+
+# ---------------------------------------------------------------------------
+# Claude desktop app sessions: one key per session, opened by deep link
+# ---------------------------------------------------------------------------
+
+DESKTOP_A = "local_11111111-2222-4333-8444-555555555555"
+DESKTOP_B = "local_66666666-7777-4888-9999-aaaaaaaaaaaa"
+
+
+def desktop(sid: str, host: str, state: AgentState, cwd: str, at: float = NOW):
+    return session(
+        sid, state, cwd, at, term_program="claude-desktop", term_session=host
+    )
+
+
+def test_desktop_sessions_in_one_folder_get_a_key_each():
+    projects = group_projects(
+        [
+            desktop("a", DESKTOP_A, AgentState.WORKING, "/w", NOW - 5),
+            desktop("b", DESKTOP_B, AgentState.WAITING, "/w", NOW),
+            session("c", AgentState.DONE, "/w", NOW - 9),
+        ],
+        now=NOW,
+    )
+    assert len(projects) == 3
+    by_lead = {p.lead.session_id: p for p in projects}
+    assert by_lead["b"].state == AgentState.WAITING
+    assert by_lead["a"].label == "w 111111"
+    assert by_lead["c"].path == "/w"
