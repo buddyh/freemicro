@@ -55,7 +55,7 @@ from freemicro.agentkeys import (
     resolve_slots,
 )
 from freemicro.input.keys import escape_applescript
-from freemicro.state.engine import SessionState, tty_for_pid
+from freemicro.state.engine import CLAUDE_DESKTOP, SessionState, tty_for_pid
 
 #: ``TERM_PROGRAM`` values mapped to the macOS application name to activate.
 #: Terminals that do not export ``TERM_PROGRAM`` at all simply never match, and
@@ -98,6 +98,7 @@ _TTY_RE = re.compile(r"^/dev/[A-Za-z0-9._/-]{1,64}$")
 
 METHOD_TAB = "tab"
 METHOD_APP = "app"
+METHOD_URL = "url"
 METHOD_NONE = "none"
 
 
@@ -217,6 +218,7 @@ class FocusPlan:
     app: str = ""
     tty: str = ""
     script: str = ""
+    url: str = ""
     project: str = ""
     label: str = ""
     session: Optional[SessionState] = None
@@ -244,6 +246,8 @@ class FocusPlan:
             return f"focus {where} - {self.app} tab {self.tty}"
         if self.method == METHOD_APP:
             return f"focus {where} - {self.app} (tab unknown)"
+        if self.method == METHOD_URL:
+            return f"focus {where} - Claude desktop session"
         if where:
             return f"focus {where} - does nothing: {self.reason}"
         return f"nothing on this key ({self.reason})"
@@ -272,6 +276,23 @@ def plan_for_session(
     project = normalise_project(project or session.cwd)
     label = label or project
     terminal = session.terminal
+    if terminal.program == CLAUDE_DESKTOP:
+        url = desktop_session_url(terminal.session)
+        if url:
+            return FocusPlan(
+                method=METHOD_URL,
+                app="Claude",
+                url=url,
+                project=project,
+                label=label,
+                session=session,
+            )
+        return FocusPlan(
+            project=project,
+            label=label,
+            session=session,
+            reason="the Claude desktop app did not report a session id",
+        )
     app = app_name_for(terminal.program)
     tty = session_tty(session, lookup=tty_lookup)
 
@@ -310,6 +331,21 @@ def plan_for_session(
     return FocusPlan(
         project=project, label=label, session=session, tty=tty, reason=reason
     )
+
+
+#: The Claude desktop app's id for a session: ``local_`` plus a UUID.
+_DESKTOP_SESSION_RE = re.compile(r"^local_[0-9a-fA-F-]{36}$")
+
+
+def desktop_session_url(session_id: str) -> str:
+    """The deep link that opens a Claude desktop session, or ``""``.
+
+    The id is pattern-checked rather than escaped, because it reaches a shell:
+    a session id has no legitimate reason to contain anything else.
+    """
+    if not _DESKTOP_SESSION_RE.match(session_id or ""):
+        return ""
+    return f"claude://claude.ai/epitaxy/{session_id}"
 
 
 # ---------------------------------------------------------------------------
@@ -544,6 +580,11 @@ def perform(plan: FocusPlan, backend: Any) -> bool:
     if plan.method == METHOD_APP and plan.app:
         backend.activate_app(plan.app)
         return True
+    if plan.method == METHOD_URL and desktop_session_url(
+        plan.url.rpartition("/")[2]
+    ) == plan.url:
+        backend.run_shell(f"open {plan.url}")
+        return True
     return False
 
 
@@ -551,6 +592,7 @@ __all__ = [
     "METHOD_APP",
     "METHOD_NONE",
     "METHOD_TAB",
+    "METHOD_URL",
     "SCRIPTABLE_APPS",
     "TERMINAL_APPS",
     "FocusPlan",
@@ -558,6 +600,7 @@ __all__ = [
     "app_name_for",
     "clear_tty_cache",
     "current_slots",
+    "desktop_session_url",
     "is_scriptable",
     "new_terminal_script",
     "open_new_terminal",

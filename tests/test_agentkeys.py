@@ -1352,3 +1352,25 @@ def test_desktop_sessions_in_one_folder_get_a_key_each():
     assert by_lead["b"].state == AgentState.WAITING
     assert by_lead["a"].label == "w 111111"
     assert by_lead["c"].path == "/w"
+
+
+def test_a_desktop_session_is_focused_by_its_deep_link():
+    plan = focus.plan_for_session(
+        desktop("a", DESKTOP_A, AgentState.WAITING, "/w")
+    )
+    assert plan.method == focus.METHOD_URL
+    assert plan.url == f"claude://claude.ai/epitaxy/{DESKTOP_A}"
+    backend = RecordingBackend()
+    assert focus.perform(plan, backend)
+    assert backend.calls == [("run_shell", (f"open {plan.url}", None, False))]
+
+
+def test_a_desktop_session_id_that_is_not_an_id_does_nothing():
+    for bad in ("", "local_x; rm -rf ~", "local_" + "a" * 35 + "'"):
+        plan = focus.plan_for_session(
+            desktop("a", bad, AgentState.WAITING, "/w")
+        )
+        assert plan.method == focus.METHOD_NONE
+        backend = RecordingBackend()
+        assert not focus.perform(plan, backend)
+        assert backend.calls == []
