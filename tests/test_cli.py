@@ -727,3 +727,31 @@ def test_update_is_offline_safe(monkeypatch, capsys):
     rc = cli.cmd_update(Namespace(check=True))
     assert rc == 0            # cannot confirm an update, so do not claim one
     assert "could not reach PyPI" in capsys.readouterr().out
+
+
+def test_focus_opens_the_session_on_an_agent_key(monkeypatch, capsys):
+    from freemicro import cli, focus
+    from freemicro.input import actions
+
+    calls = []
+    plan = focus.FocusPlan(
+        method=focus.METHOD_URL,
+        url="claude://claude.ai/epitaxy/local_11111111-2222-4333-8444-555555555555",
+        label="w 111111",
+    )
+    monkeypatch.setattr(focus, "plan_for_slot", lambda i: calls.append(i) or plan)
+    backend = actions.RecordingBackend()
+    monkeypatch.setattr(actions, "best_backend", lambda: backend)
+    assert cli.main(["focus", "2"]) == 0
+    assert calls == [1]
+    assert backend.calls == [("run_shell", (f"open {plan.url}", None, False))]
+    assert "Claude desktop session" in capsys.readouterr().out
+
+
+def test_focus_on_an_empty_key_fails_quietly(monkeypatch):
+    from freemicro import cli, focus
+    from freemicro.input import actions
+
+    monkeypatch.setattr(focus, "plan_for_slot", lambda i: focus.FocusPlan(reason="empty"))
+    monkeypatch.setattr(actions, "best_backend", actions.RecordingBackend)
+    assert cli.main(["focus", "6"]) == 1
