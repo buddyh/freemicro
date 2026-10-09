@@ -20,6 +20,13 @@ def no_hardware(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def terminal_session_env(monkeypatch):
+    """Run as a terminal session even when the suite runs inside Claude desktop."""
+    monkeypatch.delenv("CLAUDE_CODE_ENTRYPOINT", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_HOST_SESSION_ID", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def isolated_config(monkeypatch, tmp_path):
     """Keep tests off the developer's real ``~/.freemicro`` config."""
     monkeypatch.setenv("FREEMICRO_HOME", str(tmp_path / "freemicro"))

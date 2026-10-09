@@ -234,6 +234,11 @@ class DecayPolicy:
 DEFAULT_DECAY = DecayPolicy()
 
 
+#: ``term_program`` recorded for a session running in the Claude desktop app
+#: (``CLAUDE_CODE_ENTRYPOINT``). Its ``term_session`` is the app's session id.
+CLAUDE_DESKTOP = "claude-desktop"
+
+
 @dataclass(frozen=True)
 class TerminalInfo:
     """Where a session is *physically* running, as best we can tell.
@@ -488,6 +493,15 @@ def current_terminal(
         except Exception:  # noqa: BLE001
             tty = ""
     environ = os.environ
+    if environ.get("CLAUDE_CODE_ENTRYPOINT") == CLAUDE_DESKTOP:
+        # A Claude desktop app session has no tab to raise; what reaches it is
+        # the app's own id for the session, which a deep link can open.
+        return TerminalInfo(
+            tty=normalise_tty(tty),
+            pid=os.getppid(),
+            program=CLAUDE_DESKTOP,
+            session=environ.get("CLAUDE_CODE_HOST_SESSION_ID", ""),
+        )
     return TerminalInfo(
         tty=normalise_tty(tty),
         pid=os.getppid(),
