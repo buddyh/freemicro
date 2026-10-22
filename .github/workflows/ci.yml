@@ -30,7 +30,7 @@ jobs:
           python-version: "3.12"
       - name: Install
         run: |
-          python -m pip install --upgrade "pip>=26.2.2; python_version >= '3.10'" "certifi>=2026.10.19"
+          python -m pip install --upgrade --only-binary=:all: --require-hashes --no-deps -r .github/security-bootstrap.txt
           python -c "import certifi, subprocess, sys; subprocess.run([sys.executable, '-m', 'pip', '--cert', certifi.where(), 'install', '-e', '.[dev]'], check=True)"
       - name: ruff check
         run: ruff check --output-format=github .
@@ -52,7 +52,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install
         run: |
-          python -m pip install --upgrade "pip>=26.2.2; python_version >= '3.10'" "certifi>=2026.10.19"
+          python -m pip install --upgrade --only-binary=:all: --require-hashes --no-deps -r .github/security-bootstrap.txt
           python -c "import certifi, subprocess, sys; subprocess.run([sys.executable, '-m', 'pip', '--cert', certifi.where(), 'install', '-e', '.[dev]'], check=True)"
       - name: Test
         run: pytest -q
@@ -76,7 +76,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install
         run: |
-          python -m pip install --upgrade "pip>=26.2.2; python_version >= '3.10'" "certifi>=2026.10.19"
+          python -m pip install --upgrade --only-binary=:all: --require-hashes --no-deps -r .github/security-bootstrap.txt
           python -c "import certifi, subprocess, sys; subprocess.run([sys.executable, '-m', 'pip', '--cert', certifi.where(), 'install', '-e', '.[dev]'], check=True)"
 
       # A test run that can reach a real pad would be able to repaint someone's
@@ -144,7 +144,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install
         run: |
-          python -m pip install --upgrade "pip>=26.2.2; python_version >= '3.10'" "certifi>=2026.10.19"
+          python -m pip install --upgrade --only-binary=:all: --require-hashes --no-deps -r .github/security-bootstrap.txt
           python -c "import certifi, subprocess, sys; subprocess.run([sys.executable, '-m', 'pip', '--cert', certifi.where(), 'install', '-e', '.[dev]'], check=True)"
       - name: Test
         run: pytest -q
@@ -162,14 +162,14 @@ jobs:
           python-version: "3.12"
       - name: Build
         run: |
-          python -m pip install --upgrade "pip>=26.2.2; python_version >= '3.10'" "certifi>=2026.10.19"
+          python -m pip install --upgrade --only-binary=:all: --require-hashes --no-deps -r .github/security-bootstrap.txt
           python -c "import certifi, subprocess, sys; subprocess.run([sys.executable, '-m', 'pip', '--cert', certifi.where(), 'install', 'build', 'twine'], check=True)"
           python -m build
           twine check dist/*
       - name: Install the wheel into a clean venv and run it
         run: |
           python -m venv /tmp/clean
-          /tmp/clean/bin/python -m pip install --upgrade "pip>=26.2.2" "certifi>=2026.10.19"
+          /tmp/clean/bin/python -m pip install --upgrade --only-binary=:all: --require-hashes --no-deps -r .github/security-bootstrap.txt
           /tmp/clean/bin/pip install dist/*.whl
           /tmp/clean/bin/freemicro --version
           /tmp/clean/bin/freemicro renderers
