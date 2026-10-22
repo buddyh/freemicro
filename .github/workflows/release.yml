@@ -157,6 +157,13 @@ jobs:
             *) echo "Refusing: '$TAG_NAME' is not a vX.Y.Z tag." >&2; exit 1 ;;
           esac
 
+      # Old release tags may predate the authenticated bootstrap requirements.
+      # Preserve the workflow revision's trusted pins outside the tag checkout.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+      - name: Preserve authenticated installer requirements
+        run: cp .github/security-bootstrap.txt "$RUNNER_TEMP/freemicro-security-bootstrap.txt"
       - uses: actions/checkout@v4
         with:
           ref: refs/tags/${{ inputs.tag }}
@@ -169,7 +176,7 @@ jobs:
       # was tagged, in this job, with nothing in between.
       - name: Build from the tag
         run: |
-          python -m pip install --upgrade --only-binary=:all: --require-hashes --no-deps -r .github/security-bootstrap.txt
+          python -m pip install --upgrade --only-binary=:all: --require-hashes --no-deps -r "$RUNNER_TEMP/freemicro-security-bootstrap.txt"
           python -c "import certifi, subprocess, sys; subprocess.run([sys.executable, '-m', 'pip', '--cert', certifi.where(), 'install', 'build', 'twine'], check=True)"
           python -m build
           twine check --strict dist/*
