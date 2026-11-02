@@ -640,10 +640,16 @@ def test_alerts_test_dry_run_lists_every_default_channel(capsys):
     assert "display notification" in out
 
 
-def test_alerts_test_spawns_through_the_injected_runner(monkeypatch):
+def test_alerts_test_spawns_through_the_injected_runner(monkeypatch, tmp_path):
     calls = []
     import freemicro.alerts as alerts_mod
 
+    # `alerts --test` skips any sound whose file is missing. The real ones live
+    # in /System/Library/Sounds, which only exists on macOS, so point every
+    # name at a stand-in file to keep this hermetic on Linux CI.
+    fake_sound = tmp_path / "Fake.aiff"
+    fake_sound.write_bytes(b"")
+    monkeypatch.setattr(alerts_mod, "sound_path", lambda name: fake_sound)
     monkeypatch.setattr(alerts_mod, "spawn", lambda argv: calls.append(list(argv)))
     assert cli.cmd_alerts(Namespace(test=True, dry_run=False, gap=0.0)) == 0
     # Every default sound and notify fired through spawn, none skipped.
