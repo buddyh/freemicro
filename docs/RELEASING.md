@@ -435,9 +435,7 @@ code execution.
 ### W8 - CI runner note · **watch this one**
 
 `.github/workflows/ci.yml` runs macOS tests on `macos-latest` (arm64) for Python
-3.11 - 3.13 and on `macos-13` (x86_64) for 3.9/3.10, because
-`actions/setup-python` publishes no macOS arm64 builds for those two versions.
-The legacy job is `continue-on-error: true` on purpose - it is supplementary
-coverage, and when GitHub retires the `macos-13` image it should be **deleted**,
-not repaired. Do not remove 3.9 from `test-linux`; that job is what actually
-guarantees the 3.9 floor.
+3.11 - 3.13 only, because `actions/setup-python` publishes no macOS arm64 builds
+for 3.9/3.10. The old `macos-13` (x86_64) legacy job was deleted once GitHub
+retired that image and its runs sat queued until they timed out. Do not remove
+3.9 from `test-linux`; that job is what actually guarantees the 3.9 floor.

@@ -9,6 +9,8 @@ on:
 # FREEMICRO_NO_DEVICE makes the device layer behave as if no pad were attached
 # (tests/conftest.py sets it per-test as well - this is the belt to that's
 # braces, and it covers the steps that are not pytest).
+# pip 26.2.2 requires Python >=3.10. The Python3.9 lane uses the fixed
+# certifi bundle explicitly for package downloads while preserving app support.
 env:
   FREEMICRO_NO_DEVICE: "1"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -27,7 +29,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: pip install -e ".[dev]"
+        run: |
+          python -m pip install --upgrade --only-binary=:all: --require-hashes --no-deps -r .github/security-bootstrap.txt
+          python -c "import certifi, subprocess, sys; subprocess.run([sys.executable, '-m', 'pip', '--cert', certifi.where(), 'install', '-e', '.[dev]'], check=True)"
       - name: ruff check
         run: ruff check --output-format=github .
 
@@ -47,7 +51,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install
-        run: pip install -e ".[dev]"
+        run: |
+          python -m pip install --upgrade --only-binary=:all: --require-hashes --no-deps -r .github/security-bootstrap.txt
+          python -c "import certifi, subprocess, sys; subprocess.run([sys.executable, '-m', 'pip', '--cert', certifi.where(), 'install', '-e', '.[dev]'], check=True)"
       - name: Test
         run: pytest -q
 
@@ -61,7 +67,7 @@ jobs:
       fail-fast: false
       matrix:
         # macos-latest is arm64. actions/setup-python has no arm64 build for
-        # 3.9/3.10, which is why those live in test-macos-legacy below.
+        # 3.9/3.10; their coverage comes from test-linux.
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
@@ -69,7 +75,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install
-        run: pip install -e ".[dev]"
+        run: |
+          python -m pip install --upgrade --only-binary=:all: --require-hashes --no-deps -r .github/security-bootstrap.txt
+          python -c "import certifi, subprocess, sys; subprocess.run([sys.executable, '-m', 'pip', '--cert', certifi.where(), 'install', '-e', '.[dev]'], check=True)"
 
       # A test run that can reach a real pad would be able to repaint someone's
       # LEDs - and on a self-hosted runner, that someone is a person. Prove the
@@ -115,30 +123,6 @@ jobs:
           print(bundle["text"])
           PY
 
-  # Supplementary: 3.9 and 3.10 on macOS need an x86_64 runner, because
-  # actions/setup-python publishes no macOS arm64 builds for them. Kept
-  # non-blocking on purpose - the pure-logic 3.9/3.10 coverage is in
-  # test-linux, and this job's only job is to catch a macOS-specific
-  # regression on an old interpreter. When macos-13 is retired, delete this
-  # job; do not delete the 3.9 entries in test-linux.
-  test-macos-legacy:
-    name: macos (x86_64) · py${{ matrix.python-version }}
-    runs-on: macos-13
-    continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.9", "3.10"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install
-        run: pip install -e ".[dev]"
-      - name: Test
-        run: pytest -q
-
   # Catches packaging breakage on the PR that causes it rather than on release
   # day: a missing package-data file (default_keymap.json, the web UI assets)
   # only shows up in a built wheel installed somewhere clean.
@@ -152,12 +136,14 @@ jobs:
           python-version: "3.12"
       - name: Build
         run: |
-          pip install build twine
+          python -m pip install --upgrade --only-binary=:all: --require-hashes --no-deps -r .github/security-bootstrap.txt
+          python -c "import certifi, subprocess, sys; subprocess.run([sys.executable, '-m', 'pip', '--cert', certifi.where(), 'install', 'build', 'twine'], check=True)"
           python -m build
           twine check dist/*
       - name: Install the wheel into a clean venv and run it
         run: |
           python -m venv /tmp/clean
+          /tmp/clean/bin/python -m pip install --upgrade --only-binary=:all: --require-hashes --no-deps -r .github/security-bootstrap.txt
           /tmp/clean/bin/pip install dist/*.whl
           /tmp/clean/bin/freemicro --version
           /tmp/clean/bin/freemicro renderers
