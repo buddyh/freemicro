@@ -565,7 +565,7 @@ def _newest_session_in(
     path: str, slots: Sequence[AgentSlot]
 ) -> Optional[SessionState]:
     matches = [
-        s for s in slots if s.project is not None and project_matches(s.project.path, path)
+        s for s in slots if s.project is not None and project_matches(s.project, path)
     ]
     best = max(matches, key=lambda s: s.last_active, default=None)
     return best.project.lead if best is not None and best.project else None

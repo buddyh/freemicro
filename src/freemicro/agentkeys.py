@@ -366,23 +366,26 @@ def project_key(session: SessionState) -> str:
     return path
 
 
-def project_matches(project_path: str, wanted: str) -> bool:
-    """Whether a project key is ``wanted``, or a desktop session inside it.
+def project_matches(project: Project, wanted: str) -> bool:
+    """Whether ``project`` is ``wanted``, or a desktop session in that directory.
 
     Pins and explicit focus bindings are written against a *directory*; a
     desktop session's key is that directory plus ``#<session id>``, so a
-    directory matches every desktop session in it. A composite ``wanted`` only
-    matches itself.
+    directory matches every desktop session whose working directory it is. The
+    sessions decide, not the key text, so a real directory named ``/w#x`` is
+    never mistaken for a session in ``/w``. A composite ``wanted`` only matches
+    itself.
     """
     if not wanted:
         return False
-    if project_path == wanted:
+    if project.path == wanted:
         return True
-    prefix = wanted + DESKTOP_SEPARATOR
-    if not project_path.startswith(prefix):
-        return False
-    rest = project_path[len(prefix):]
-    return bool(rest) and os.sep not in rest
+    return any(
+        project_key(session) == project.path
+        and session.term_program == CLAUDE_DESKTOP
+        and normalise_project(session.cwd) == wanted
+        for session in project.sessions
+    )
 
 
 def project_label(path: str) -> str:
@@ -720,7 +723,7 @@ def _pinned_target(
     candidates = [
         p.path
         for p in projects
-        if p.path not in assigned and project_matches(p.path, pin)
+        if p.path not in assigned and project_matches(p, pin)
     ]
     if not candidates:
         return pin
@@ -799,7 +802,7 @@ def slot_for_project(slots: Sequence[AgentSlot], path: str) -> Optional[AgentSlo
     for slot in slots:
         if slot.path == wanted:
             return slot
-    matches = [s for s in slots if s.project is not None and project_matches(s.path, wanted)]
+    matches = [s for s in slots if s.project is not None and project_matches(s.project, wanted)]
     return max(matches, key=lambda s: s.last_active, default=None)
 
 

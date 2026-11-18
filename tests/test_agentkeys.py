@@ -1434,3 +1434,11 @@ def test_a_directory_does_not_match_a_sibling_with_the_same_prefix():
     config = AgentKeysConfig(policy=POLICY_MANUAL, slots=("/w", "", "", "", "", ""))
     slots = resolve_slots(config, [session("a", AgentState.WAITING, "/w2")], now=NOW)
     assert slots[0].project is None
+
+
+def test_a_directory_with_a_hash_is_not_a_desktop_session_of_its_prefix():
+    config = AgentKeysConfig(policy=POLICY_MANUAL, slots=("/w", "", "", "", "", ""))
+    slots = resolve_slots(
+        config, [session("a", AgentState.WAITING, "/w#notes")], now=NOW
+    )
+    assert slots[0].project is None
