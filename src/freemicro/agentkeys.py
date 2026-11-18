@@ -366,6 +366,25 @@ def project_key(session: SessionState) -> str:
     return path
 
 
+def project_matches(project_path: str, wanted: str) -> bool:
+    """Whether a project key is ``wanted``, or a desktop session inside it.
+
+    Pins and explicit focus bindings are written against a *directory*; a
+    desktop session's key is that directory plus ``#<session id>``, so a
+    directory matches every desktop session in it. A composite ``wanted`` only
+    matches itself.
+    """
+    if not wanted:
+        return False
+    if project_path == wanted:
+        return True
+    prefix = wanted + DESKTOP_SEPARATOR
+    if not project_path.startswith(prefix):
+        return False
+    rest = project_path[len(prefix):]
+    return bool(rest) and os.sep not in rest
+
+
 def project_label(path: str) -> str:
     """The short name to show for a project directory."""
     if not path:
@@ -647,9 +666,13 @@ def resolve_slots(
     # 1. Pins are absolute, live or not - but only on a key we own. A pin on an
     #    un-owned key is ignored (and warned about at load time), never honoured
     #    onto a key Codex is driving.
+    #    A pin written as a directory also claims a live desktop session in
+    #    it (whose key is ``dir#id``), keeping the session it held before.
     for index, pin in enumerate(config.pins):
         if pin and index in owned:
-            assigned[index] = pin
+            assigned[index] = _pinned_target(
+                pin, projects, assigned, previous[index] if index < len(previous) else ""
+            )
             pinned[index] = True
 
     if config.policy != POLICY_MANUAL:
@@ -685,6 +708,24 @@ def resolve_slots(
         )
         for index in range(SLOT_COUNT)
     ]
+
+
+def _pinned_target(
+    pin: str,
+    projects: Sequence[Project],
+    assigned: Sequence[str],
+    previous: str,
+) -> str:
+    """The project key a pin resolves to: a live match, else the pin itself."""
+    candidates = [
+        p.path
+        for p in projects
+        if p.path not in assigned and project_matches(p.path, pin)
+    ]
+    if not candidates:
+        return pin
+    previous = normalise_project(previous)
+    return previous if previous in candidates else candidates[0]
 
 
 @dataclass
@@ -758,7 +799,8 @@ def slot_for_project(slots: Sequence[AgentSlot], path: str) -> Optional[AgentSlo
     for slot in slots:
         if slot.path == wanted:
             return slot
-    return None
+    matches = [s for s in slots if s.project is not None and project_matches(s.path, wanted)]
+    return max(matches, key=lambda s: s.last_active, default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -928,6 +970,7 @@ __all__ = [
     "normalise_project",
     "parse_agent_keys",
     "project_label",
+    "project_matches",
     "resolve_slots",
     "slot_for_project",
 ]

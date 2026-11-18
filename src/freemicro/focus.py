@@ -52,7 +52,9 @@ from freemicro.agentkeys import (
     AgentKeysConfig,
     AgentSlot,
     normalise_project,
+    project_matches,
     resolve_slots,
+    slot_for_project,
 )
 from freemicro.input.keys import escape_applescript
 from freemicro.state.engine import CLAUDE_DESKTOP, SessionState, tty_for_pid
@@ -532,15 +534,15 @@ def plan_for_slot(
 
     resolved = slots if slots is not None else current_slots(config, store=store)
     if wanted:
-        for slot in resolved:
-            if slot.path == wanted and slot.project is not None:
-                return plan_for_session(
-                    slot.session,
-                    project=slot.path,
-                    label=slot.label,
-                    fallback=fallback,
-                    tty_lookup=tty_lookup,
-                )
+        slot = slot_for_project(resolved, wanted)
+        if slot is not None and slot.project is not None:
+            return plan_for_session(
+                slot.session,
+                project=slot.path,
+                label=slot.label,
+                fallback=fallback,
+                tty_lookup=tty_lookup,
+            )
         # Not on a key right now - look straight at the live sessions instead.
         session = _newest_session_in(wanted, resolved)
         return plan_for_session(
@@ -562,10 +564,11 @@ def plan_for_slot(
 def _newest_session_in(
     path: str, slots: Sequence[AgentSlot]
 ) -> Optional[SessionState]:
-    for slot in slots:
-        if slot.project is not None and slot.project.path == path:
-            return slot.project.lead
-    return None
+    matches = [
+        s for s in slots if s.project is not None and project_matches(s.project.path, path)
+    ]
+    best = max(matches, key=lambda s: s.last_active, default=None)
+    return best.project.lead if best is not None and best.project else None
 
 
 def perform(plan: FocusPlan, backend: Any) -> bool:
