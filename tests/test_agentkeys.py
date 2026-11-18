@@ -1374,3 +1374,63 @@ def test_a_desktop_session_id_that_is_not_an_id_does_nothing():
         backend = RecordingBackend()
         assert not focus.perform(plan, backend)
         assert backend.calls == []
+
+
+def test_a_directory_pin_claims_a_desktop_session_in_that_directory():
+    config = AgentKeysConfig(policy=POLICY_MANUAL, slots=("/w", "", "", "", "", ""))
+    slots = resolve_slots(
+        config,
+        [desktop("a", DESKTOP_A, AgentState.WAITING, "/w")],
+        now=NOW,
+    )
+    assert slots[0].pinned
+    assert slots[0].project is not None
+    assert slots[0].project.lead.session_id == "a"
+    assert slots[0].path == f"/w#{DESKTOP_A}"
+
+
+def test_a_pinned_policy_directory_pin_does_not_strand_its_desktop_session():
+    config = AgentKeysConfig(policy=POLICY_PINNED, slots=("/w", "", "", "", "", ""))
+    slots = resolve_slots(
+        config,
+        [desktop("a", DESKTOP_A, AgentState.WAITING, "/w")],
+        now=NOW,
+    )
+    live = [s for s in slots if s.project is not None]
+    assert [s.index for s in live] == [0]
+
+
+def test_a_directory_pin_with_no_live_session_stays_reserved():
+    config = AgentKeysConfig(policy=POLICY_PINNED, slots=("/w", "", "", "", "", ""))
+    slots = resolve_slots(config, [], now=NOW)
+    assert slots[0].reserved and slots[0].path == "/w"
+
+
+def test_a_directory_pin_keeps_the_desktop_session_it_held():
+    config = AgentKeysConfig(policy=POLICY_MANUAL, slots=("/w", "", "", "", "", ""))
+    sessions = [
+        desktop("a", DESKTOP_A, AgentState.WORKING, "/w", NOW - 5),
+        desktop("b", DESKTOP_B, AgentState.WORKING, "/w", NOW),
+    ]
+    slots = resolve_slots(
+        config, sessions, previous=(f"/w#{DESKTOP_A}",), now=NOW
+    )
+    assert slots[0].project.lead.session_id == "a"
+
+
+def test_a_directory_focus_binding_reaches_a_desktop_session():
+    config = AgentKeysConfig(policy=POLICY_RECENT)
+    slots = resolve_slots(
+        config,
+        [desktop("a", DESKTOP_A, AgentState.WAITING, "/w")],
+        now=NOW,
+    )
+    plan = focus.plan_for_slot(0, project="/w", slots=slots)
+    assert plan.method == focus.METHOD_URL
+    assert plan.url == f"claude://claude.ai/epitaxy/{DESKTOP_A}"
+
+
+def test_a_directory_does_not_match_a_sibling_with_the_same_prefix():
+    config = AgentKeysConfig(policy=POLICY_MANUAL, slots=("/w", "", "", "", "", ""))
+    slots = resolve_slots(config, [session("a", AgentState.WAITING, "/w2")], now=NOW)
+    assert slots[0].project is None
