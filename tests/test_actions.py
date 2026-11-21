@@ -360,8 +360,12 @@ def test_the_quartz_registry_tracks_and_releases_a_whole_chord():
     posted = []
     original_key_event = quartz.key_event
     original_guard = quartz.install_release_guard
+    original_available = quartz.is_available
     quartz.key_event = lambda code, down, flags=0: posted.append((code, down))
     quartz.install_release_guard = lambda: None
+    # release_all() only posts key-ups when CGEvent is usable, which is never
+    # true off macOS. The poster is stubbed, so pretend it is.
+    quartz.is_available = lambda: True
     quartz.release_all()  # start clean
     try:
         quartz.hold_chord(31, ("control", "command"), down=True)  # ctrl+cmd+o
@@ -382,6 +386,7 @@ def test_the_quartz_registry_tracks_and_releases_a_whole_chord():
     finally:
         quartz.key_event = original_key_event
         quartz.install_release_guard = original_guard
+        quartz.is_available = original_available
         quartz.release_all()
 
 

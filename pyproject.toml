@@ -92,3 +92,8 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 88
 target-version = "py39"
+
+[tool.ruff.lint]
+# Pin the rule set rather than inheriting ruff's default, which widened in 0.16
+# and turned an unpinned `pip install ruff` into a red lint job overnight.
+select = ["E4", "E7", "E9", "F"]
