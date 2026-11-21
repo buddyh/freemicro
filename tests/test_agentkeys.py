@@ -1386,7 +1386,7 @@ def test_a_directory_pin_claims_a_desktop_session_in_that_directory():
     assert slots[0].pinned
     assert slots[0].project is not None
     assert slots[0].project.lead.session_id == "a"
-    assert slots[0].path == f"/w#{DESKTOP_A}"
+    assert slots[0].path == f"claude-desktop:{DESKTOP_A}:/w"
 
 
 def test_a_pinned_policy_directory_pin_does_not_strand_its_desktop_session():
@@ -1413,7 +1413,7 @@ def test_a_directory_pin_keeps_the_desktop_session_it_held():
         desktop("b", DESKTOP_B, AgentState.WORKING, "/w", NOW),
     ]
     slots = resolve_slots(
-        config, sessions, previous=(f"/w#{DESKTOP_A}",), now=NOW
+        config, sessions, previous=(f"claude-desktop:{DESKTOP_A}:/w",), now=NOW
     )
     assert slots[0].project.lead.session_id == "a"
 
@@ -1442,3 +1442,25 @@ def test_a_directory_with_a_hash_is_not_a_desktop_session_of_its_prefix():
         config, [session("a", AgentState.WAITING, "/w#notes")], now=NOW
     )
     assert slots[0].project is None
+
+
+def test_a_hash_in_a_directory_name_is_kept_in_its_label():
+    projects = group_projects(
+        [session("a", AgentState.WAITING, "/work#notes")], now=NOW
+    )
+    assert projects[0].label == "work#notes"
+
+
+def test_a_directory_spelled_like_a_desktop_key_stays_its_own_project():
+    lookalike = f"/w#{DESKTOP_A}"
+    projects = group_projects(
+        [
+            desktop("a", DESKTOP_A, AgentState.WORKING, "/w", NOW - 5),
+            session("b", AgentState.WAITING, lookalike, NOW),
+        ],
+        now=NOW,
+    )
+    assert len(projects) == 2
+    by_lead = {p.lead.session_id: p for p in projects}
+    assert by_lead["b"].path == lookalike
+    assert by_lead["a"].path != lookalike
