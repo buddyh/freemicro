@@ -348,8 +348,11 @@ def parse_agent_keys(raw: Any) -> AgentKeysConfig:
 # Projects
 # ---------------------------------------------------------------------------
 
-#: Joins a directory to a Claude desktop session id in a project key.
-DESKTOP_SEPARATOR = "#"
+#: Starts the project key of a Claude desktop session:
+#: ``claude-desktop:<session id>:<directory>``. A session cwd is absolute, so no
+#: real directory can ever be spelled like this, and a terminal session's key
+#: (its bare directory) never collides with a desktop one.
+DESKTOP_KEY_PREFIX = "claude-desktop:"
 
 
 def project_key(session: SessionState) -> str:
@@ -361,20 +364,35 @@ def project_key(session: SessionState) -> str:
     would hide all but one of them.
     """
     path = normalise_project(session.cwd)
-    if path and session.term_program == CLAUDE_DESKTOP and session.term_session:
-        return f"{path}{DESKTOP_SEPARATOR}{session.term_session}"
+    sid = session.term_session
+    if (
+        os.path.isabs(path)
+        and session.term_program == CLAUDE_DESKTOP
+        and sid
+        and ":" not in sid
+    ):
+        return f"{DESKTOP_KEY_PREFIX}{sid}:{path}"
     return path
+
+
+def split_desktop_key(key: str) -> Optional[Tuple[str, str]]:
+    """``(session id, directory)`` for a desktop project key, else ``None``."""
+    if not key.startswith(DESKTOP_KEY_PREFIX):
+        return None
+    sid, sep, folder = key[len(DESKTOP_KEY_PREFIX):].partition(":")
+    if not sid or not sep or not os.path.isabs(folder):
+        return None
+    return sid, folder
 
 
 def project_matches(project: Project, wanted: str) -> bool:
     """Whether ``project`` is ``wanted``, or a desktop session in that directory.
 
     Pins and explicit focus bindings are written against a *directory*; a
-    desktop session's key is that directory plus ``#<session id>``, so a
-    directory matches every desktop session whose working directory it is. The
-    sessions decide, not the key text, so a real directory named ``/w#x`` is
-    never mistaken for a session in ``/w``. A composite ``wanted`` only matches
-    itself.
+    desktop session's key carries its session id as well (see
+    :func:`project_key`), so a directory matches every desktop session whose
+    working directory it is. The sessions decide, not the key text. A desktop
+    ``wanted`` only matches itself.
     """
     if not wanted:
         return False
@@ -392,8 +410,9 @@ def project_label(path: str) -> str:
     """The short name to show for a project directory."""
     if not path:
         return ""
-    if DESKTOP_SEPARATOR in path:
-        folder, _, session = path.rpartition(DESKTOP_SEPARATOR)
+    desktop = split_desktop_key(path)
+    if desktop is not None:
+        session, folder = desktop
         short = session.removeprefix("local_")[:6]
         return f"{os.path.basename(folder.rstrip(os.sep)) or folder} {short}"
     base = os.path.basename(path.rstrip(os.sep)) or path
@@ -525,7 +544,7 @@ def _disambiguate(projects: Sequence[Project]) -> List[Project]:
 
 def _tail(path: str, depth: int) -> str:
     """The last ``depth`` components of a path, for display only."""
-    if DESKTOP_SEPARATOR in path:
+    if split_desktop_key(path) is not None:
         return project_label(path)
     parts = [part for part in path.split(os.sep) if part]
     if not parts:
