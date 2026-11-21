@@ -1322,3 +1322,145 @@ def test_records_written_before_this_feature_still_load(tmp_path):
     )
     store.clock = lambda: NOW
     assert store.sessions()[0].terminal.empty
+
+
+# ---------------------------------------------------------------------------
+# Claude desktop app sessions: one key per session, opened by deep link
+# ---------------------------------------------------------------------------
+
+DESKTOP_A = "local_11111111-2222-4333-8444-555555555555"
+DESKTOP_B = "local_66666666-7777-4888-9999-aaaaaaaaaaaa"
+
+
+def desktop(sid: str, host: str, state: AgentState, cwd: str, at: float = NOW):
+    return session(
+        sid, state, cwd, at, term_program="claude-desktop", term_session=host
+    )
+
+
+def test_desktop_sessions_in_one_folder_get_a_key_each():
+    projects = group_projects(
+        [
+            desktop("a", DESKTOP_A, AgentState.WORKING, "/w", NOW - 5),
+            desktop("b", DESKTOP_B, AgentState.WAITING, "/w", NOW),
+            session("c", AgentState.DONE, "/w", NOW - 9),
+        ],
+        now=NOW,
+    )
+    assert len(projects) == 3
+    by_lead = {p.lead.session_id: p for p in projects}
+    assert by_lead["b"].state == AgentState.WAITING
+    assert by_lead["a"].label == "w 111111"
+    assert by_lead["c"].path == "/w"
+
+
+def test_a_desktop_session_is_focused_by_its_deep_link():
+    plan = focus.plan_for_session(
+        desktop("a", DESKTOP_A, AgentState.WAITING, "/w")
+    )
+    assert plan.method == focus.METHOD_URL
+    assert plan.url == f"claude://claude.ai/epitaxy/{DESKTOP_A}"
+    backend = RecordingBackend()
+    assert focus.perform(plan, backend)
+    assert backend.calls == [("run_shell", (f"open {plan.url}", None, False))]
+
+
+def test_a_desktop_session_id_that_is_not_an_id_does_nothing():
+    for bad in ("", "local_x; rm -rf ~", "local_" + "a" * 35 + "'"):
+        plan = focus.plan_for_session(
+            desktop("a", bad, AgentState.WAITING, "/w")
+        )
+        assert plan.method == focus.METHOD_NONE
+        backend = RecordingBackend()
+        assert not focus.perform(plan, backend)
+        assert backend.calls == []
+
+
+def test_a_directory_pin_claims_a_desktop_session_in_that_directory():
+    config = AgentKeysConfig(policy=POLICY_MANUAL, slots=("/w", "", "", "", "", ""))
+    slots = resolve_slots(
+        config,
+        [desktop("a", DESKTOP_A, AgentState.WAITING, "/w")],
+        now=NOW,
+    )
+    assert slots[0].pinned
+    assert slots[0].project is not None
+    assert slots[0].project.lead.session_id == "a"
+    assert slots[0].path == f"claude-desktop:{DESKTOP_A}:/w"
+
+
+def test_a_pinned_policy_directory_pin_does_not_strand_its_desktop_session():
+    config = AgentKeysConfig(policy=POLICY_PINNED, slots=("/w", "", "", "", "", ""))
+    slots = resolve_slots(
+        config,
+        [desktop("a", DESKTOP_A, AgentState.WAITING, "/w")],
+        now=NOW,
+    )
+    live = [s for s in slots if s.project is not None]
+    assert [s.index for s in live] == [0]
+
+
+def test_a_directory_pin_with_no_live_session_stays_reserved():
+    config = AgentKeysConfig(policy=POLICY_PINNED, slots=("/w", "", "", "", "", ""))
+    slots = resolve_slots(config, [], now=NOW)
+    assert slots[0].reserved and slots[0].path == "/w"
+
+
+def test_a_directory_pin_keeps_the_desktop_session_it_held():
+    config = AgentKeysConfig(policy=POLICY_MANUAL, slots=("/w", "", "", "", "", ""))
+    sessions = [
+        desktop("a", DESKTOP_A, AgentState.WORKING, "/w", NOW - 5),
+        desktop("b", DESKTOP_B, AgentState.WORKING, "/w", NOW),
+    ]
+    slots = resolve_slots(
+        config, sessions, previous=(f"claude-desktop:{DESKTOP_A}:/w",), now=NOW
+    )
+    assert slots[0].project.lead.session_id == "a"
+
+
+def test_a_directory_focus_binding_reaches_a_desktop_session():
+    config = AgentKeysConfig(policy=POLICY_RECENT)
+    slots = resolve_slots(
+        config,
+        [desktop("a", DESKTOP_A, AgentState.WAITING, "/w")],
+        now=NOW,
+    )
+    plan = focus.plan_for_slot(0, project="/w", slots=slots)
+    assert plan.method == focus.METHOD_URL
+    assert plan.url == f"claude://claude.ai/epitaxy/{DESKTOP_A}"
+
+
+def test_a_directory_does_not_match_a_sibling_with_the_same_prefix():
+    config = AgentKeysConfig(policy=POLICY_MANUAL, slots=("/w", "", "", "", "", ""))
+    slots = resolve_slots(config, [session("a", AgentState.WAITING, "/w2")], now=NOW)
+    assert slots[0].project is None
+
+
+def test_a_directory_with_a_hash_is_not_a_desktop_session_of_its_prefix():
+    config = AgentKeysConfig(policy=POLICY_MANUAL, slots=("/w", "", "", "", "", ""))
+    slots = resolve_slots(
+        config, [session("a", AgentState.WAITING, "/w#notes")], now=NOW
+    )
+    assert slots[0].project is None
+
+
+def test_a_hash_in_a_directory_name_is_kept_in_its_label():
+    projects = group_projects(
+        [session("a", AgentState.WAITING, "/work#notes")], now=NOW
+    )
+    assert projects[0].label == "work#notes"
+
+
+def test_a_directory_spelled_like_a_desktop_key_stays_its_own_project():
+    lookalike = f"/w#{DESKTOP_A}"
+    projects = group_projects(
+        [
+            desktop("a", DESKTOP_A, AgentState.WORKING, "/w", NOW - 5),
+            session("b", AgentState.WAITING, lookalike, NOW),
+        ],
+        now=NOW,
+    )
+    assert len(projects) == 2
+    by_lead = {p.lead.session_id: p for p in projects}
+    assert by_lead["b"].path == lookalike
+    assert by_lead["a"].path != lookalike

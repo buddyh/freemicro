@@ -40,7 +40,8 @@ jobs:
   # import to pass, something has leaked into the wrong layer.
   test-linux:
     name: linux · py${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    # ubuntu-latest is 26.04 now, and actions/setup-python has no 3.9 build for it.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:

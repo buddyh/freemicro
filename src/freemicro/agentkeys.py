@@ -78,6 +78,7 @@ from typing import (
 )
 
 from freemicro.state.engine import (
+    CLAUDE_DESKTOP,
     DEFAULT_DECAY,
     AgentState,
     DecayPolicy,
@@ -347,10 +348,73 @@ def parse_agent_keys(raw: Any) -> AgentKeysConfig:
 # Projects
 # ---------------------------------------------------------------------------
 
+#: Starts the project key of a Claude desktop session:
+#: ``claude-desktop:<session id>:<directory>``. A session cwd is absolute, so no
+#: real directory can ever be spelled like this, and a terminal session's key
+#: (its bare directory) never collides with a desktop one.
+DESKTOP_KEY_PREFIX = "claude-desktop:"
+
+
+def project_key(session: SessionState) -> str:
+    """The key a session's Agent Key is grouped under.
+
+    A terminal session groups by its directory. A Claude desktop app session
+    groups by directory *and* its app session id: the app keeps many sessions
+    in one folder, each with a stable id of its own, so one key per folder
+    would hide all but one of them.
+    """
+    path = normalise_project(session.cwd)
+    sid = session.term_session
+    if (
+        os.path.isabs(path)
+        and session.term_program == CLAUDE_DESKTOP
+        and sid
+        and ":" not in sid
+    ):
+        return f"{DESKTOP_KEY_PREFIX}{sid}:{path}"
+    return path
+
+
+def split_desktop_key(key: str) -> Optional[Tuple[str, str]]:
+    """``(session id, directory)`` for a desktop project key, else ``None``."""
+    if not key.startswith(DESKTOP_KEY_PREFIX):
+        return None
+    sid, sep, folder = key[len(DESKTOP_KEY_PREFIX):].partition(":")
+    if not sid or not sep or not os.path.isabs(folder):
+        return None
+    return sid, folder
+
+
+def project_matches(project: Project, wanted: str) -> bool:
+    """Whether ``project`` is ``wanted``, or a desktop session in that directory.
+
+    Pins and explicit focus bindings are written against a *directory*; a
+    desktop session's key carries its session id as well (see
+    :func:`project_key`), so a directory matches every desktop session whose
+    working directory it is. The sessions decide, not the key text. A desktop
+    ``wanted`` only matches itself.
+    """
+    if not wanted:
+        return False
+    if project.path == wanted:
+        return True
+    return any(
+        project_key(session) == project.path
+        and session.term_program == CLAUDE_DESKTOP
+        and normalise_project(session.cwd) == wanted
+        for session in project.sessions
+    )
+
+
 def project_label(path: str) -> str:
     """The short name to show for a project directory."""
     if not path:
         return ""
+    desktop = split_desktop_key(path)
+    if desktop is not None:
+        session, folder = desktop
+        short = session.removeprefix("local_")[:6]
+        return f"{os.path.basename(folder.rstrip(os.sep)) or folder} {short}"
     base = os.path.basename(path.rstrip(os.sep)) or path
     return base
 
@@ -424,7 +488,7 @@ def group_projects(
     """
     grouped: Dict[str, List[Tuple[AgentState, SessionState]]] = {}
     for session in sessions:
-        path = normalise_project(session.cwd)
+        path = project_key(session)
         if not path:
             continue
         state = effective_state(session, now=now, decay=decay)
@@ -480,6 +544,8 @@ def _disambiguate(projects: Sequence[Project]) -> List[Project]:
 
 def _tail(path: str, depth: int) -> str:
     """The last ``depth`` components of a path, for display only."""
+    if split_desktop_key(path) is not None:
+        return project_label(path)
     parts = [part for part in path.split(os.sep) if part]
     if not parts:
         return path
@@ -622,9 +688,13 @@ def resolve_slots(
     # 1. Pins are absolute, live or not - but only on a key we own. A pin on an
     #    un-owned key is ignored (and warned about at load time), never honoured
     #    onto a key Codex is driving.
+    #    A pin written as a directory also claims a live desktop session in
+    #    it (whose key is ``dir#id``), keeping the session it held before.
     for index, pin in enumerate(config.pins):
         if pin and index in owned:
-            assigned[index] = pin
+            assigned[index] = _pinned_target(
+                pin, projects, assigned, previous[index] if index < len(previous) else ""
+            )
             pinned[index] = True
 
     if config.policy != POLICY_MANUAL:
@@ -660,6 +730,24 @@ def resolve_slots(
         )
         for index in range(SLOT_COUNT)
     ]
+
+
+def _pinned_target(
+    pin: str,
+    projects: Sequence[Project],
+    assigned: Sequence[str],
+    previous: str,
+) -> str:
+    """The project key a pin resolves to: a live match, else the pin itself."""
+    candidates = [
+        p.path
+        for p in projects
+        if p.path not in assigned and project_matches(p, pin)
+    ]
+    if not candidates:
+        return pin
+    previous = normalise_project(previous)
+    return previous if previous in candidates else candidates[0]
 
 
 @dataclass
@@ -733,7 +821,8 @@ def slot_for_project(slots: Sequence[AgentSlot], path: str) -> Optional[AgentSlo
     for slot in slots:
         if slot.path == wanted:
             return slot
-    return None
+    matches = [s for s in slots if s.project is not None and project_matches(s.project, wanted)]
+    return max(matches, key=lambda s: s.last_active, default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -903,6 +992,7 @@ __all__ = [
     "normalise_project",
     "parse_agent_keys",
     "project_label",
+    "project_matches",
     "resolve_slots",
     "slot_for_project",
 ]

@@ -1101,3 +1101,21 @@ def test_a_real_ps_call_for_a_pid_that_cannot_exist_does_not_raise():
     """The one place the real ``ps`` is exercised - and only for its failure."""
     assert pid_started(2 ** 30) is None
     assert pid_started(0) is None
+
+
+def test_a_claude_desktop_session_records_its_app_session_id(monkeypatch):
+    """The desktop app has no tab to match; its own session id is what we keep."""
+    monkeypatch.setenv("CLAUDE_CODE_ENTRYPOINT", "claude-desktop")
+    monkeypatch.setenv("CLAUDE_CODE_HOST_SESSION_ID", "local_abc")
+    monkeypatch.setenv("TERM_PROGRAM", "iTerm.app")
+    info = current_terminal(direct=lambda: "", from_pid=lambda pid: "")
+    assert info.program == "claude-desktop"
+    assert info.session == "local_abc"
+
+
+def test_a_terminal_session_ignores_the_desktop_host_id(monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_ENTRYPOINT", "cli")
+    monkeypatch.setenv("CLAUDE_CODE_HOST_SESSION_ID", "local_abc")
+    monkeypatch.setenv("TERM_PROGRAM", "iTerm.app")
+    info = current_terminal(direct=lambda: "", from_pid=lambda pid: "")
+    assert info.program == "iTerm.app"

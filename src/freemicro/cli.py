@@ -593,6 +593,20 @@ def _print_liveness(report) -> None:
             print(line)
 
 
+def cmd_focus(args: argparse.Namespace) -> int:
+    """Do what pressing Agent Key ``args.key`` does: open its session.
+
+    For pads whose keys are mapped in Work Louder Input rather than read by
+    FreeMicro - an Input Smart Action runs ``freemicro focus 1``.
+    """
+    from freemicro import focus
+    from freemicro.input.actions import best_backend
+
+    plan = focus.plan_for_slot(args.key - 1)
+    print(plan.describe())
+    return 0 if focus.perform(plan, best_backend()) else 1
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     from freemicro import staleness
 
@@ -2815,6 +2829,11 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("state", choices=[s.value for s in AgentState])
     e.add_argument("--session", default="manual")
     e.set_defaults(func=cmd_emit)
+
+    fo = sub.add_parser("focus", help="open the session on Agent Key 1-6")
+    fo.add_argument("key", type=int, choices=range(1, 7), metavar="KEY",
+                    help="Agent Key number, 1-6")
+    fo.set_defaults(func=cmd_focus)
 
     s = sub.add_parser("status", help="show current resolved state")
     s.add_argument("--json", action="store_true")
